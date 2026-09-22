@@ -77,12 +77,11 @@
         .stu-reg-link:hover { color: #1abc9c; }
     </style>
 
-    <!-- Firebase SDK Setup -->
+    <!-- Firebase SDK Setup (Compat Version) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
     <script>
-      // Firebase Config yodana lada kotasa
       const firebaseConfig = {
         apiKey: "AIzaSyDRY5Gi-RKkgXBSUlIEb5tfDAxHmOyt0S4",
         authDomain: "mark-analyzing-system.firebaseapp.com",
@@ -94,7 +93,9 @@
       };
 
       // Initialize Firebase & Firestore
-      firebase.initializeApp(firebaseConfig);
+      if (!firebase.apps.length) {
+          firebase.initializeApp(firebaseConfig);
+      }
       const db = firebase.firestore();
     </script>
 </head>
