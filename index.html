@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mark Analyzing System - Specialized</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+
+    <style>
+        :root {
+            --overlay-student: rgba(41, 128, 185, 0.7);
+            --overlay-staff: rgba(17, 153, 142, 0.75);
+            --overlay-admin: rgba(44, 62, 80, 0.85); 
+            --glass: rgba(255, 255, 255, 0.12);
+            --glass-border: rgba(255, 255, 255, 0.2);
+        }
+
+        #intro-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #020617; display: flex; justify-content: center; align-items: center;
+            z-index: 5000; transition: opacity 1s ease, visibility 1s; overflow: hidden;
+        }
+
+        #intro-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.4; }
+        .intro-content { position: relative; z-index: 5001; text-align: center; color: white; }
+        .intro-logo { font-size: 80px; margin-bottom: 10px; animation: pulseGlow 2s infinite ease-in-out; }
+        .intro-title { font-size: 2.8rem; font-weight: 600; letter-spacing: 3px; background: linear-gradient(to right, #fff, #3498db, #2ecc71); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .intro-bar { width: 300px; height: 4px; background: rgba(255,255,255,0.1); border-radius: 10px; margin: 25px auto; overflow: hidden; }
+        .intro-progress { width: 0%; height: 100%; background: linear-gradient(90deg, #3498db, #2ecc71); animation: loadProgress 2.8s forwards ease-in-out; }
+
+        @keyframes loadProgress { 0% { width: 0%; } 100% { width: 100%; } }
+        @keyframes pulseGlow { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.8; } }
+
+        body {
+            font-family: 'Poppins', sans-serif; margin: 0; min-height: 100vh;
+            display: flex; justify-content: center; align-items: center;
+            transition: background 0.8s ease; background-size: cover; background-position: center; background-attachment: fixed;
+            background-image: linear-gradient(var(--overlay-student), var(--overlay-student)), url('https://images.unsplash.com/photo-1523240795612-9a054b0db644?q=80&w=1920');
+        }
+
+        .container {
+            background: var(--glass); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
+            border: 1px solid var(--glass-border); border-radius: 24px;
+            padding: 2.5rem; width: 90%; max-width: 950px;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.4); text-align: center; color: white;
+            opacity: 0; transform: translateY(30px); transition: all 1s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        body.loaded .container { opacity: 1; transform: translateY(0); }
+
+        #role-selector button { border: 2px solid white; background: transparent; color: white; padding: 10px 25px; border-radius: 30px; margin: 8px; font-weight: 600; cursor: pointer; transition: 0.3s; }
+        #role-selector button.active { background: white; color: #1e293b; }
+
+        .staff-type-container { display: flex; justify-content: center; align-items: center; gap: 20px; background: rgba(255, 255, 255, 0.1); padding: 12px; border-radius: 15px; width: fit-content; margin: 0 auto 20px auto; }
+        input { background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; padding: 14px; color: white; width: 85%; margin-bottom: 15px; outline: none; }
+
+        .btn-action { background: #fff; color: #1e293b; padding: 12px 25px; border-radius: 10px; font-weight: 600; border: none; cursor: pointer; transition: 0.3s; margin: 5px; }
+        .btn-delete { background: #ff4757; color: white; padding: 5px 10px; border-radius: 5px; border: none; cursor: pointer; }
+        .btn-approve { background: #2ecc71; color: white; padding: 5px 10px; border-radius: 5px; border: none; cursor: pointer; }
+        .btn-edit { background: #3498db; color: white; padding: 5px 10px; border-radius: 5px; border: none; cursor: pointer; }
+
+        .admin-card { background: rgba(0,0,0,0.25); padding: 20px; border-radius: 15px; margin-top: 15px; text-align: left; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; background: rgba(255,255,255,0.95); border-radius: 10px; overflow: hidden; color: #1e293b; }
+        th, td { padding: 12px; border-bottom: 1px solid #ddd; font-size: 0.85rem; text-align: left; }
+        th { background: #f1f5f9; color: #334155; }
+
+        .hidden { display: none !important; }
+        .footer-tag { position: fixed; bottom: 15px; font-size: 13px; color: white; opacity: 0.7; }
+        #chart-box { background: white; padding: 20px; border-radius: 18px; margin: 25px 0; display: none; }
+        .role-badge { background: rgba(255,255,255,0.2); padding: 5px 15px; border-radius: 20px; font-size: 0.8rem; display: inline-block; margin-bottom: 10px; }
+        .batch-heading { color: #f1f5f9; margin: 15px 0 0 0; opacity: 0.9; font-size: 0.95rem; }
+        .stu-reg-link { color: #2980b9; font-weight: 600; cursor: pointer; text-decoration: underline; }
+        .stu-reg-link:hover { color: #1abc9c; }
+    </style>
+</head>
+<body>
+
+    <div id="intro-overlay">
+        <canvas id="intro-canvas"></canvas>
+        <div class="intro-content">
+            <div class="intro-logo">📊</div>
+            <h1 class="intro-title">Mark Analyzing System</h1>
+            <div class="intro-bar"><div class="intro-progress"></div></div>
+            <p style="text-transform: uppercase; letter-spacing: 4px; font-size: 0.7rem; opacity: 0.8;">Asmitha Mandira Systems</p>
+        </div>
+    </div>
+
+    <div id="login-screen" class="container">
+        <h1 id="portal-title">🎓 Student Portal</h1>
+        <div id="role-selector">
+            <button id="btn-student" onclick="selectRole('student')" class="active">Student</button>
+            <button id="btn-staff" onclick="selectRole('staff')">Staff</button>
+            <button id="btn-admin" onclick="selectRole('admin')">Admin</button>
+        </div>
+
+        <form id="auth-form" style="margin-top: 30px;" autocomplete="off" onsubmit="event.preventDefault(); handleAuth();">
+            <!-- Hidden Dummy Fields to trick persistent browser autofill algorithms -->
+            <input type="text" style="display:none;" aria-hidden="true" autocomplete="username">
+            <input type="password" style="display:none;" aria-hidden="true" autocomplete="new-password">
+
+            <div id="staff-reg-options" class="hidden staff-type-container">
+                <label style="cursor:pointer"><input type="radio" name="staffType" value="Lecturer" checked> 👨‍🏫 Lecturer</label>
+                <label style="cursor:pointer; margin-left:15px;"><input type="radio" name="staffType" value="Demonstrator"> 🔬 Demonstrator</label>
+            </div>
+            <input type="text" id="username" placeholder="Reg No / Username" autocomplete="off" name="user_id_field">
+            <div id="subject-field" class="hidden">
+                <input type="text" id="subjectName" placeholder="Subject Name (e.g., Data Structures)" autocomplete="off">
+                <input type="text" id="subjectCode" placeholder="Subject Code (e.g., CS101)" autocomplete="off">
+            </div>
+            <div id="student-reg-fields" class="hidden">
+                <input type="email" id="stuEmail" placeholder="Email Address" autocomplete="off">
+                <input type="text" id="stuContact" placeholder="Contact Number" autocomplete="off">
+                <input type="text" id="stuBatch" placeholder="Batch Year (e.g., 2024)" autocomplete="off">
+                <input type="text" id="stuSubjects" placeholder="Subjects (comma separated codes, e.g., CS101, CS102)" autocomplete="off">
+            </div>
+            <input type="password" id="password" placeholder="Access Key" autocomplete="new-password" name="user_access_key">
+            <button type="button" id="backToLoginBtn" onclick="toggleAuthMode(false)" class="btn-action hidden" style="background:transparent; border:1px solid rgba(255,255,255,0.6); color:white; width:90%; margin-bottom:10px;">⬅ Back to Login</button>
+            <button type="submit" class="btn-action" id="auth-btn" style="width:90%">Enter System</button>
+            <p id="toggle-text">New user? <span onclick="toggleAuthMode(true)" style="text-decoration:underline; cursor:pointer;">Register Account</span></p>
+        </form>
+    </div>
+
+    <div id="dashboard" class="container hidden">
+        <div id="user-badge" class="role-badge">Role</div>
+        <h2 id="welcome-msg">Portal</h2>
+        <div id="sub-tag" style="opacity:0.8; font-weight: 600;"></div>
+        <hr style="opacity:0.1; margin:20px 0;">
+
+        <div id="admin-panel" class="hidden">
+            <div id="main-admin-only" class="hidden admin-card">
+                <h4>System Management: Sub-Admins</h4>
+                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                    <input type="text" id="subAdminUser" placeholder="New Admin Username" style="width:40%; margin-bottom:0;" autocomplete="off">
+                    <input type="password" id="subAdminPass" placeholder="Password" style="width:40%; margin-bottom:0;" autocomplete="new-password">
+                    <button type="button" onclick="addSubAdmin()" class="btn-action" style="margin:0;">Add</button>
+                </div>
+                <table id="subAdminTable">
+                    <thead><tr><th>Admin Username</th><th>Role</th><th>Action</th></tr></thead>
+                    <tbody id="subAdminBody"></tbody>
+                </table>
+            </div>
+
+            <div class="admin-card">
+                <h3>🔔 Pending Requests (Staff & Students)</h3>
+                <table id="pendingTable">
+                    <thead><tr><th>User</th><th>Role</th><th>Subject</th><th>Action</th></tr></thead>
+                    <tbody id="pendingBody"></tbody>
+                </table>
+            </div>
+
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                <div class="admin-card">
+                    <h3>👨‍🏫 Active Staff</h3>
+                    <table id="activeStaffTable">
+                        <thead><tr><th>Name</th><th>Subject</th><th>Action</th></tr></thead>
+                        <tbody id="activeStaffBody"></tbody>
+                    </table>
+                </div>
+                <div class="admin-card">
+                    <h3>🎓 Active Students</h3>
+                    <table id="activeStudentTable">
+                        <thead><tr><th>Reg No</th><th>Batch</th><th>Subjects</th><th>Action</th></tr></thead>
+                        <tbody id="activeStudentBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="staff-entry" class="hidden">
+            <div id="staff-student-list" class="admin-card">
+                <h3>🧑‍🎓 Registered Students — <span id="staffSubjectLabel"></span></h3>
+                <p style="opacity:0.75; font-size:0.85rem; margin-top:-8px;">Tap a Reg No to load it into the marks form below.</p>
+                <div id="studentGroups"></div>
+            </div>
+            <div id="lecturer-fields" class="hidden admin-card">
+                <p>Final Exam Marks (60% Weight)</p>
+                <input type="text" id="stuRegL" placeholder="Student Reg No" style="width:45%" autocomplete="off">
+                <input type="number" id="examMark" placeholder="Mark (0-100)" style="width:45%">
+            </div>
+            <div id="demonstrator-fields" class="hidden admin-card">
+                <p>CA Marks (40% Weight)</p>
+                <input type="text" id="stuRegD" placeholder="Student Reg No" style="width:90%" autocomplete="off">
+                <div style="display: flex; gap: 10px; justify-content: center;">
+                    <input type="number" id="vivaMark" placeholder="Viva (30%)" style="width:28%">
+                    <input type="number" id="assignMark" placeholder="Assign (30%)" style="width:28%">
+                    <input type="number" id="practiceMark" placeholder="Prac (40%)" style="width:28%">
+                </div>
+            </div>
+            <button type="button" onclick="saveMarks()" class="btn-action" style="background:#3498db; color:white; width:90%">Update Record</button>
+        </div>
+
+        <div id="report-section" class="admin-card">
+            <button id="analyticsBtn" type="button" onclick="toggleAnalytics()" class="btn-action" style="background:#f1c40f;">📈 Analytics</button>
+            <div id="chart-box"><canvas id="markChart"></canvas></div>
+            <table id="markTable">
+                <thead><tr><th>Subject</th><th>Reg No</th><th>Exam</th><th>Prac</th><th>Total</th><th>Status</th></tr></thead>
+                <tbody id="markBody"></tbody>
+            </table>
+            <button id="finalizeBtn" type="button" onclick="finalizeAll()" class="btn-action hidden" style="background:#e67e22; color:white;">Publish Results</button>
+            <button type="button" onclick="exportPDF()" class="btn-action" style="background:#2c3e50; color:white;">📄 Export PDF</button>
+        </div>
+
+        <button type="button" onclick="goBackToLogin()" class="btn-action" style="background:#64748b; color:white; margin-top:20px;">⬅ Back</button>
+        <button type="button" onclick="signOut()" class="btn-action" style="background:#ef4444; color:white; margin-top:20px;">Sign Out</button>
+    </div>
+
+    <div class="footer-tag">System Architect :- <b>Asmitha Mandira</b></div>
+
+    <script>
+        // Intro Animation
+        const canvas = document.getElementById('intro-canvas');
+        const ctx = canvas.getContext('2d');
+        let bars = [];
+        function initIntro() {
+            canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+            for(let i=0; i<50; i++) bars.push({ x: Math.random() * canvas.width, y: canvas.height, width: Math.random() * 20 + 5, height: Math.random() * canvas.height * 0.5, speed: Math.random() * 2 + 1, color: Math.random() > 0.5 ? '#3498db' : '#2ecc71' });
+        }
+        function animateIntro() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            bars.forEach(b => { ctx.fillStyle = b.color; ctx.globalAlpha = 0.2; ctx.fillRect(b.x, canvas.height - b.height, b.width, b.height); b.height += b.speed; if(b.height > canvas.height) b.height = 0; });
+            requestAnimationFrame(animateIntro);
+        }
+
+        window.addEventListener('load', () => {
+            initIntro(); animateIntro();
+            setTimeout(() => {
+                document.getElementById('intro-overlay').style.opacity = '0';
+                setTimeout(() => { document.getElementById('intro-overlay').style.visibility = 'hidden'; document.body.classList.add('loaded'); }, 1000);
+            }, 2500);
+            clearAuthInputs();
+        });
+
+        // Core Data
+        const MAIN_ADMIN = { user: "Asmitha", pass: "20250925", roleType: 'Main Admin' };
+        let users = JSON.parse(localStorage.getItem('systemUsers')) || { staff: [], student: [], admins: [] };
+        let allMarks = JSON.parse(localStorage.getItem('systemMarks')) || [];
+        let selectedRole = "student", isRegistrationMode = false, currentUser = null, myChart = null;
+
+        // Function to explicitly clear password and login inputs
+        function clearAuthInputs() {
+            const pwd = document.getElementById('password');
+            const usr = document.getElementById('username');
+            const subPass = document.getElementById('subAdminPass');
+            if (pwd) pwd.value = '';
+            if (usr) usr.value = '';
+            if (subPass) subPass.value = '';
+            clearRegistrationExtras();
+        }
+
+        function selectRole(role) {
+            selectedRole = role;
+            const bgs = { student: "https://images.unsplash.com/photo-1523240795612-9a054b0db644?q=80&w=1920", staff: "https://images.unsplash.com/photo-1497493292307-31c376b6e479?q=80&w=1920", admin: "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&w=1920" };
+            const overlays = { student: 'var(--overlay-student)', staff: 'var(--overlay-staff)', admin: 'var(--overlay-admin)' };
+            document.body.style.backgroundImage = `linear-gradient(${overlays[role]}, ${overlays[role]}), url('${bgs[role]}')`;
+            
+            document.getElementById('portal-title').innerText = role.toUpperCase() + " PORTAL";
+            document.querySelectorAll('#role-selector button').forEach(b => b.classList.remove('active'));
+            document.getElementById('btn-' + role).classList.add('active');
+            document.getElementById('staff-reg-options').classList.toggle('hidden', role !== 'staff');
+            
+            // Clear inputs when changing roles to prevent residual password autofill
+            clearAuthInputs();
+            toggleAuthMode(false);
+        }
+
+        function toggleAuthMode(isReg) {
+            isRegistrationMode = isReg;
+            document.getElementById('subject-field').className = (isReg && selectedRole === 'staff') ? "" : "hidden";
+            document.getElementById('student-reg-fields').className = (isReg && selectedRole === 'student') ? "" : "hidden";
+            document.getElementById('backToLoginBtn').classList.toggle('hidden', !isReg);
+            document.getElementById('auth-btn').innerText = isReg ? "Register Account" : "Enter System";
+            
+            // Clear credentials field to ensure state stability when toggling view
+            const pwd = document.getElementById('password');
+            if (pwd) pwd.value = '';
+        }
+
+        function clearRegistrationExtras() {
+            ['subjectName', 'subjectCode', 'stuEmail', 'stuContact', 'stuBatch', 'stuSubjects'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+        }
+
+        function handleAuth() {
+            const u = document.getElementById('username').value.trim();
+            const p = document.getElementById('password').value.trim();
+            if(!u || !p) return alert("Please fill all fields");
+
+            if (selectedRole === 'admin') {
+                if (u === MAIN_ADMIN.user && p === MAIN_ADMIN.pass) {
+                    currentUser = { ...MAIN_ADMIN, mainRole: 'admin' };
+                } else {
+                    const sub = users.admins.find(a => a.user === u && a.pass === p);
+                    if (sub) currentUser = { ...sub, mainRole: 'admin' };
+                    else return alert("Invalid Admin Access");
+                }
+                showDashboard(); return;
+            }
+
+            if (isRegistrationMode) {
+                let roleType = (selectedRole === 'staff') ? document.querySelector('input[name="staffType"]:checked').value : "Student";
+                let newUser = { user: u, pass: p, roleType, approved: false };
+
+                if (selectedRole === 'staff') {
+                    const sn = document.getElementById('subjectName').value.trim();
+                    const sc = document.getElementById('subjectCode').value.trim().toUpperCase();
+                    if (!sn || !sc) return alert("Please enter both Subject Name and Subject Code");
+                    newUser.subjectName = sn;
+                    newUser.subjectCode = sc;
+                } else if (selectedRole === 'student') {
+                    const email = document.getElementById('stuEmail').value.trim();
+                    const contact = document.getElementById('stuContact').value.trim();
+                    const batch = document.getElementById('stuBatch').value.trim();
+                    const subjRaw = document.getElementById('stuSubjects').value.trim();
+                    if (!email || !contact || !batch || !subjRaw) return alert("Please fill in email, contact, batch year and subjects");
+                    newUser.subjectCode = "General";
+                    newUser.email = email;
+                    newUser.contact = contact;
+                    newUser.batchYear = batch;
+                    newUser.subjects = subjRaw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+                }
+
+                users[selectedRole].push(newUser);
+                localStorage.setItem('systemUsers', JSON.stringify(users));
+                alert("Registration Sent! Access Pending Admin Approval.");
+                clearAuthInputs();
+                toggleAuthMode(false);
+            } else {
+                const found = users[selectedRole].find(user => user.user === u && user.pass === p);
+                if (found) {
+                    if (found.approved) { currentUser = { ...found, mainRole: selectedRole }; showDashboard(); }
+                    else alert("Access Pending: Admin verification required.");
+                } else alert("Invalid Credentials");
+            }
+        }
+
+        function showDashboard() {
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('dashboard').classList.remove('hidden');
+            document.getElementById('welcome-msg').innerText = `Welcome, ${currentUser.user}`;
+            document.getElementById('user-badge').innerText = currentUser.roleType || "Student";
+
+            if (currentUser.mainRole === 'admin') {
+                document.getElementById('admin-panel').classList.remove('hidden');
+                if (currentUser.user === MAIN_ADMIN.user) document.getElementById('main-admin-only').classList.remove('hidden');
+                renderAdminTables();
+            } else if (currentUser.mainRole === 'staff') {
+                document.getElementById('staff-entry').classList.remove('hidden');
+                document.getElementById('sub-tag').innerText = currentUser.subjectName ? `Course: ${currentUser.subjectName} (${currentUser.subjectCode})` : `Course: ${currentUser.subjectCode}`;
+                document.getElementById(currentUser.roleType === 'Lecturer' ? 'lecturer-fields' : 'demonstrator-fields').classList.remove('hidden');
+                if(currentUser.roleType === 'Lecturer') document.getElementById('finalizeBtn').classList.remove('hidden');
+                renderStaffStudentList();
+            } else if (currentUser.mainRole === 'student') {
+                document.getElementById('sub-tag').innerText = `Batch: ${currentUser.batchYear || 'N/A'} | Subjects: ${(currentUser.subjects || []).join(', ') || 'N/A'}`;
+            }
+            renderMarkTable();
+        }
+
+        function goBackToLogin() {
+            document.getElementById('dashboard').classList.add('hidden');
+            document.getElementById('login-screen').classList.remove('hidden');
+
+            document.getElementById('admin-panel').classList.add('hidden');
+            document.getElementById('main-admin-only').classList.add('hidden');
+            document.getElementById('staff-entry').classList.add('hidden');
+            document.getElementById('lecturer-fields').classList.add('hidden');
+            document.getElementById('demonstrator-fields').classList.add('hidden');
+            document.getElementById('finalizeBtn').classList.add('hidden');
+
+            currentUser = null;
+            clearAuthInputs();
+        }
+
+        function signOut() {
+            clearAuthInputs();
+            location.reload();
+        }
+
+        // Admin Management Logic
+        function renderAdminTables() {
+            const pBody = document.getElementById('pendingBody');
+            const sBody = document.getElementById('activeStaffBody');
+            const stBody = document.getElementById('activeStudentBody');
+            const saBody = document.getElementById('subAdminBody');
+            
+            pBody.innerHTML = sBody.innerHTML = stBody.innerHTML = saBody.innerHTML = "";
+
+            const isMainAdmin = currentUser.user === MAIN_ADMIN.user;
+
+            users.admins.forEach((admin, i) => {
+                let editBtn = isMainAdmin ? `<button class="btn-edit" onclick="editCredentials('admins', ${i})">Edit</button>` : '';
+                saBody.innerHTML += `<tr><td>${admin.user}</td><td>${admin.roleType}</td>
+                    <td>${editBtn} <button class="btn-delete" onclick="deleteSubAdmin(${i})">Remove</button></td></tr>`;
+            });
+
+            ['staff', 'student'].forEach(type => {
+                users[type].forEach((u, i) => {
+                    if (!u.approved) {
+                        const subInfo = type === 'staff'
+                            ? (u.subjectName ? `${u.subjectName} (${u.subjectCode})` : (u.subjectCode || 'N/A'))
+                            : ((u.subjects && u.subjects.length) ? u.subjects.join(', ') : 'N/A');
+                        pBody.innerHTML += `<tr><td>${u.user}</td><td>${u.roleType}</td><td>${subInfo}</td>
+                            <td><button class="btn-approve" onclick="approveUser('${type}', ${i})">Approve</button>
+                            <button class="btn-delete" onclick="deleteUser('${type}', ${i})">Reject</button></td></tr>`;
+                    } else if (type === 'staff') {
+                        sBody.innerHTML += `<tr><td>${u.user}</td><td>${u.subjectName ? u.subjectName + ' (' + u.subjectCode + ')' : u.subjectCode}</td>
+                            <td><button class="btn-edit" onclick="editCredentials('staff', ${i})">Edit</button>
+                            <button class="btn-delete" onclick="deleteUser('staff', ${i})">Delete</button></td></tr>`;
+                    } else {
+                        stBody.innerHTML += `<tr><td>${u.user}</td><td>${u.batchYear || 'N/A'}</td><td>${(u.subjects && u.subjects.length) ? u.subjects.join(', ') : 'N/A'}</td>
+                            <td><button class="btn-edit" onclick="editCredentials('student', ${i})">Edit</button>
+                            <button class="btn-delete" onclick="deleteUser('student', ${i})">Delete</button></td></tr>`;
+                    }
+                });
+            });
+        }
+
+        function editCredentials(type, index) {
+            const userObj = users[type][index];
+
+            if(type === 'admins' && currentUser.user !== MAIN_ADMIN.user) {
+                return alert("Access Denied: Only the Main Admin can update admin accounts.");
+            }
+
+            const newUsername = prompt("Enter New Username/Reg No:", userObj.user);
+            if (!newUsername) return;
+
+            const newPass = prompt("Enter New Access Key:", userObj.pass);
+            if (!newPass) return;
+
+            const oldUsername = userObj.user;
+            
+            users[type][index].user = newUsername.trim();
+            users[type][index].pass = newPass.trim();
+
+            if(type === 'student') {
+                allMarks.forEach(m => {
+                    if(m.reg === oldUsername) m.reg = newUsername.trim();
+                });
+                localStorage.setItem('systemMarks', JSON.stringify(allMarks));
+            }
+
+            updateSystemUsers();
+            alert("Account Updated Successfully.");
+            renderMarkTable();
+        }
+
+        function approveUser(type, index) { users[type][index].approved = true; updateSystemUsers(); }
+        function deleteUser(type, index) { if(confirm("Confirm Deletion?")) { users[type].splice(index, 1); updateSystemUsers(); } }
+        
+        function addSubAdmin() {
+            const u = document.getElementById('subAdminUser').value.trim();
+            const p = document.getElementById('subAdminPass').value.trim();
+            if(!u || !p) return alert("Fill in username and password");
+            
+            users.admins.push({ user: u, pass: p, roleType: 'Sub Admin', approved: true });
+            document.getElementById('subAdminUser').value = "";
+            document.getElementById('subAdminPass').value = "";
+            updateSystemUsers(); 
+            alert("Sub-Admin Access Granted.");
+        }
+
+        function deleteSubAdmin(index) {
+            if(confirm("Remove this Sub-Admin's access?")) {
+                users.admins.splice(index, 1);
+                updateSystemUsers();
+            }
+        }
+
+        function updateSystemUsers() { localStorage.setItem('systemUsers', JSON.stringify(users)); renderAdminTables(); }
+
+        // Marks Logic
+        function saveMarks() {
+            const isL = currentUser.roleType === 'Lecturer';
+            const reg = document.getElementById(isL ? 'stuRegL' : 'stuRegD').value.trim().toUpperCase();
+            if(!reg) return alert("Missing Reg No");
+
+            let idx = allMarks.findIndex(m => m.reg === reg && m.sub === currentUser.subjectCode);
+            let entry = idx > -1 ? allMarks[idx] : { reg, sub: currentUser.subjectCode, exam: 0, prac: 0, finalized: false };
+
+            if (isL) entry.exam = parseFloat(document.getElementById('examMark').value) || 0;
+            else {
+                const v = parseFloat(document.getElementById('vivaMark').value) || 0;
+                const a = parseFloat(document.getElementById('assignMark').value) || 0;
+                const p = parseFloat(document.getElementById('practiceMark').value) || 0;
+                entry.prac = (v * 0.3 + a * 0.3 + p * 0.4);
+            }
+            entry.total = ((entry.exam * 0.6) + (entry.prac * 0.4)).toFixed(2);
+            if (idx > -1) allMarks[idx] = entry; else allMarks.push(entry);
+            localStorage.setItem('systemMarks', JSON.stringify(allMarks));
+            alert("Marks Saved."); renderMarkTable();
+        }
+
+        function renderStaffStudentList() {
+            const label = document.getElementById('staffSubjectLabel');
+            const container = document.getElementById('studentGroups');
+            if (!label || !container) return;
+
+            label.innerText = currentUser.subjectName ? `${currentUser.subjectName} (${currentUser.subjectCode})` : currentUser.subjectCode;
+
+            const relevant = users.student.filter(s => s.approved && Array.isArray(s.subjects) && s.subjects.includes(currentUser.subjectCode));
+
+            if (relevant.length === 0) {
+                container.innerHTML = `<p style="opacity:0.7;">No students have registered for this subject yet.</p>`;
+                return;
+            }
+
+            const groups = {};
+            relevant.forEach(s => {
+                const batch = s.batchYear || 'Unspecified';
+                if (!groups[batch]) groups[batch] = [];
+                groups[batch].push(s);
+            });
+
+            let html = '';
+            Object.keys(groups).sort().forEach(batch => {
+                html += `<h4 class="batch-heading">🎓 Batch ${batch}</h4>
+                <table><thead><tr><th>Reg No</th><th>Email</th><th>Contact</th></tr></thead><tbody>`;
+                groups[batch].forEach(s => {
+                    html += `<tr>
+                        <td><span class="stu-reg-link" onclick="selectStudentForMarks('${s.user}')">${s.user}</span></td>
+                        <td>${s.email || '-'}</td>
+                        <td>${s.contact || '-'}</td>
+                    </tr>`;
+                });
+                html += `</tbody></table>`;
+            });
+            container.innerHTML = html;
+        }
+
+        function selectStudentForMarks(reg) {
+            const isL = currentUser.roleType === 'Lecturer';
+            const input = document.getElementById(isL ? 'stuRegL' : 'stuRegD');
+            if (!input) return;
+            input.value = reg;
+            input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            input.focus();
+            input.style.outline = '2px solid #2ecc71';
+            setTimeout(() => { input.style.outline = 'none'; }, 1500);
+        }
+
+        function renderMarkTable() {
+            const tbody = document.getElementById('markBody');
+            const data = allMarks.filter(m => currentUser.mainRole === 'admin' || (currentUser.mainRole === 'staff' && m.sub === currentUser.subjectCode) || (currentUser.mainRole === 'student' && m.reg === currentUser.user && m.finalized));
+            tbody.innerHTML = data.map(m => `<tr><td>${m.sub}</td><td>${m.reg}</td><td>${m.exam}</td><td>${parseFloat(m.prac).toFixed(1)}</td><td>${m.total}</td><td>${m.total >= 40 ? 'PASS' : 'FAIL'}</td></tr>`).join('');
+        }
+
+        function finalizeAll() {
+            if(confirm("Publish results for this subject?")) {
+                allMarks.forEach(m => { if(m.sub === currentUser.subjectCode) m.finalized = true; });
+                localStorage.setItem('systemMarks', JSON.stringify(allMarks));
+                alert("Results Live!"); renderMarkTable();
+            }
+        }
+
+        function toggleAnalytics() {
+            const box = document.getElementById('chart-box');
+            box.style.display = box.style.display === 'block' ? 'none' : 'block';
+            if(box.style.display === 'block') {
+                const ctx = document.getElementById('markChart').getContext('2d');
+                if(myChart) myChart.destroy();
+                const filtered = allMarks.filter(m => currentUser.mainRole === 'admin' || m.sub === currentUser.subjectCode);
+                myChart = new Chart(ctx, { type: 'bar', data: { labels: filtered.map(m => m.reg), datasets: [{ label: 'Final Score', data: filtered.map(m => m.total), backgroundColor: '#3498db' }] } });
+            }
+        }
+        
+        function exportPDF() { 
+            const { jsPDF } = window.jspdf; 
+            const doc = new jsPDF(); 
+            doc.text("Performance Report", 14, 15); 
+            doc.autoTable({ html: '#markTable', startY: 20 }); 
+            doc.save("Report.pdf"); 
+        }
+    </script>
+</body>
+</html>
