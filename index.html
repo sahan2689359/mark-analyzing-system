@@ -76,6 +76,27 @@
         .stu-reg-link { color: #2980b9; font-weight: 600; cursor: pointer; text-decoration: underline; }
         .stu-reg-link:hover { color: #1abc9c; }
     </style>
+
+    <!-- Firebase SDK Setup -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <script>
+      // Firebase Config yodana lada kotasa
+      const firebaseConfig = {
+        apiKey: "AIzaSyDRY5Gi-RKkgXBSUlIEb5tfDAxHmOyt0S4",
+        authDomain: "mark-analyzing-system.firebaseapp.com",
+        projectId: "mark-analyzing-system",
+        storageBucket: "mark-analyzing-system.firebasestorage.app",
+        messagingSenderId: "1018999120491",
+        appId: "1:1018999120491:web:d68dc1371bf7b1f438472e",
+        measurementId: "G-RXNNTSGJKW"
+      };
+
+      // Initialize Firebase & Firestore
+      firebase.initializeApp(firebaseConfig);
+      const db = firebase.firestore();
+    </script>
 </head>
 <body>
 
@@ -98,7 +119,6 @@
         </div>
 
         <form id="auth-form" style="margin-top: 30px;" autocomplete="off" onsubmit="event.preventDefault(); handleAuth();">
-            <!-- Hidden Dummy Fields to trick persistent browser autofill algorithms -->
             <input type="text" style="display:none;" aria-hidden="true" autocomplete="username">
             <input type="password" style="display:none;" aria-hidden="true" autocomplete="new-password">
 
@@ -232,15 +252,33 @@
                 setTimeout(() => { document.getElementById('intro-overlay').style.visibility = 'hidden'; document.body.classList.add('loaded'); }, 1000);
             }, 2500);
             clearAuthInputs();
+            listenToDatabase();
         });
 
         // Core Data
         const MAIN_ADMIN = { user: "Asmitha", pass: "20250925", roleType: 'Main Admin' };
-        let users = JSON.parse(localStorage.getItem('systemUsers')) || { staff: [], student: [], admins: [] };
-        let allMarks = JSON.parse(localStorage.getItem('systemMarks')) || [];
+        let users = { staff: [], student: [], admins: [] };
+        let allMarks = [];
         let selectedRole = "student", isRegistrationMode = false, currentUser = null, myChart = null;
 
-        // Function to explicitly clear password and login inputs
+        // Real-time Database Listener
+        function listenToDatabase() {
+            db.collection("system").doc("users").onSnapshot((doc) => {
+                if (doc.exists) {
+                    users = doc.data();
+                    if (currentUser && currentUser.mainRole === 'admin') renderAdminTables();
+                    if (currentUser && currentUser.mainRole === 'staff') renderStaffStudentList();
+                }
+            });
+
+            db.collection("system").doc("marks").onSnapshot((doc) => {
+                if (doc.exists) {
+                    allMarks = doc.data().allMarks || [];
+                    renderMarkTable();
+                }
+            });
+        }
+
         function clearAuthInputs() {
             const pwd = document.getElementById('password');
             const usr = document.getElementById('username');
@@ -262,7 +300,6 @@
             document.getElementById('btn-' + role).classList.add('active');
             document.getElementById('staff-reg-options').classList.toggle('hidden', role !== 'staff');
             
-            // Clear inputs when changing roles to prevent residual password autofill
             clearAuthInputs();
             toggleAuthMode(false);
         }
@@ -274,7 +311,6 @@
             document.getElementById('backToLoginBtn').classList.toggle('hidden', !isReg);
             document.getElementById('auth-btn').innerText = isReg ? "Register Account" : "Enter System";
             
-            // Clear credentials field to ensure state stability when toggling view
             const pwd = document.getElementById('password');
             if (pwd) pwd.value = '';
         }
@@ -286,7 +322,7 @@
             });
         }
 
-        function handleAuth() {
+        async function handleAuth() {
             const u = document.getElementById('username').value.trim();
             const p = document.getElementById('password').value.trim();
             if(!u || !p) return alert("Please fill all fields");
@@ -295,7 +331,7 @@
                 if (u === MAIN_ADMIN.user && p === MAIN_ADMIN.pass) {
                     currentUser = { ...MAIN_ADMIN, mainRole: 'admin' };
                 } else {
-                    const sub = users.admins.find(a => a.user === u && a.pass === p);
+                    const sub = (users.admins || []).find(a => a.user === u && a.pass === p);
                     if (sub) currentUser = { ...sub, mainRole: 'admin' };
                     else return alert("Invalid Admin Access");
                 }
@@ -325,13 +361,14 @@
                     newUser.subjects = subjRaw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
                 }
 
+                if (!users[selectedRole]) users[selectedRole] = [];
                 users[selectedRole].push(newUser);
-                localStorage.setItem('systemUsers', JSON.stringify(users));
+                await updateSystemUsers();
                 alert("Registration Sent! Access Pending Admin Approval.");
                 clearAuthInputs();
                 toggleAuthMode(false);
             } else {
-                const found = users[selectedRole].find(user => user.user === u && user.pass === p);
+                const found = (users[selectedRole] || []).find(user => user.user === u && user.pass === p);
                 if (found) {
                     if (found.approved) { currentUser = { ...found, mainRole: selectedRole }; showDashboard(); }
                     else alert("Access Pending: Admin verification required.");
@@ -392,14 +429,14 @@
 
             const isMainAdmin = currentUser.user === MAIN_ADMIN.user;
 
-            users.admins.forEach((admin, i) => {
+            (users.admins || []).forEach((admin, i) => {
                 let editBtn = isMainAdmin ? `<button class="btn-edit" onclick="editCredentials('admins', ${i})">Edit</button>` : '';
                 saBody.innerHTML += `<tr><td>${admin.user}</td><td>${admin.roleType}</td>
                     <td>${editBtn} <button class="btn-delete" onclick="deleteSubAdmin(${i})">Remove</button></td></tr>`;
             });
 
             ['staff', 'student'].forEach(type => {
-                users[type].forEach((u, i) => {
+                (users[type] || []).forEach((u, i) => {
                     if (!u.approved) {
                         const subInfo = type === 'staff'
                             ? (u.subjectName ? `${u.subjectName} (${u.subjectCode})` : (u.subjectCode || 'N/A'))
@@ -420,7 +457,7 @@
             });
         }
 
-        function editCredentials(type, index) {
+        async function editCredentials(type, index) {
             const userObj = users[type][index];
 
             if(type === 'admins' && currentUser.user !== MAIN_ADMIN.user) {
@@ -442,40 +479,48 @@
                 allMarks.forEach(m => {
                     if(m.reg === oldUsername) m.reg = newUsername.trim();
                 });
-                localStorage.setItem('systemMarks', JSON.stringify(allMarks));
+                await updateSystemMarks();
             }
 
-            updateSystemUsers();
+            await updateSystemUsers();
             alert("Account Updated Successfully.");
             renderMarkTable();
         }
 
-        function approveUser(type, index) { users[type][index].approved = true; updateSystemUsers(); }
-        function deleteUser(type, index) { if(confirm("Confirm Deletion?")) { users[type].splice(index, 1); updateSystemUsers(); } }
+        async function approveUser(type, index) { users[type][index].approved = true; await updateSystemUsers(); }
+        async function deleteUser(type, index) { if(confirm("Confirm Deletion?")) { users[type].splice(index, 1); await updateSystemUsers(); } }
         
-        function addSubAdmin() {
+        async function addSubAdmin() {
             const u = document.getElementById('subAdminUser').value.trim();
             const p = document.getElementById('subAdminPass').value.trim();
             if(!u || !p) return alert("Fill in username and password");
             
+            if (!users.admins) users.admins = [];
             users.admins.push({ user: u, pass: p, roleType: 'Sub Admin', approved: true });
             document.getElementById('subAdminUser').value = "";
             document.getElementById('subAdminPass').value = "";
-            updateSystemUsers(); 
+            await updateSystemUsers(); 
             alert("Sub-Admin Access Granted.");
         }
 
-        function deleteSubAdmin(index) {
+        async function deleteSubAdmin(index) {
             if(confirm("Remove this Sub-Admin's access?")) {
                 users.admins.splice(index, 1);
-                updateSystemUsers();
+                await updateSystemUsers();
             }
         }
 
-        function updateSystemUsers() { localStorage.setItem('systemUsers', JSON.stringify(users)); renderAdminTables(); }
+        // Firestore Update Functions
+        async function updateSystemUsers() { 
+            await db.collection("system").doc("users").set(users);
+        }
+
+        async function updateSystemMarks() {
+            await db.collection("system").doc("marks").set({ allMarks });
+        }
 
         // Marks Logic
-        function saveMarks() {
+        async function saveMarks() {
             const isL = currentUser.roleType === 'Lecturer';
             const reg = document.getElementById(isL ? 'stuRegL' : 'stuRegD').value.trim().toUpperCase();
             if(!reg) return alert("Missing Reg No");
@@ -492,8 +537,10 @@
             }
             entry.total = ((entry.exam * 0.6) + (entry.prac * 0.4)).toFixed(2);
             if (idx > -1) allMarks[idx] = entry; else allMarks.push(entry);
-            localStorage.setItem('systemMarks', JSON.stringify(allMarks));
-            alert("Marks Saved."); renderMarkTable();
+            
+            await updateSystemMarks();
+            alert("Marks Saved to Cloud Database."); 
+            renderMarkTable();
         }
 
         function renderStaffStudentList() {
@@ -503,7 +550,7 @@
 
             label.innerText = currentUser.subjectName ? `${currentUser.subjectName} (${currentUser.subjectCode})` : currentUser.subjectCode;
 
-            const relevant = users.student.filter(s => s.approved && Array.isArray(s.subjects) && s.subjects.includes(currentUser.subjectCode));
+            const relevant = (users.student || []).filter(s => s.approved && Array.isArray(s.subjects) && s.subjects.includes(currentUser.subjectCode));
 
             if (relevant.length === 0) {
                 container.innerHTML = `<p style="opacity:0.7;">No students have registered for this subject yet.</p>`;
@@ -550,11 +597,12 @@
             tbody.innerHTML = data.map(m => `<tr><td>${m.sub}</td><td>${m.reg}</td><td>${m.exam}</td><td>${parseFloat(m.prac).toFixed(1)}</td><td>${m.total}</td><td>${m.total >= 40 ? 'PASS' : 'FAIL'}</td></tr>`).join('');
         }
 
-        function finalizeAll() {
+        async function finalizeAll() {
             if(confirm("Publish results for this subject?")) {
                 allMarks.forEach(m => { if(m.sub === currentUser.subjectCode) m.finalized = true; });
-                localStorage.setItem('systemMarks', JSON.stringify(allMarks));
-                alert("Results Live!"); renderMarkTable();
+                await updateSystemMarks();
+                alert("Results Live!"); 
+                renderMarkTable();
             }
         }
 
